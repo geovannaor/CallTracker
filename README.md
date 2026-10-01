@@ -2,10 +2,6 @@
 
 **A pocket-sized shift tracker for support agents who want to know what their day actually looked like.**
 
-Live app: `https://geovannaor.github.io/call-tracker/`
-
----
-
 ## Why I built this
 
 I work inbound technical support for commercial customers. Dozens of calls a shift, back to back, and by 4:30 most of them blur together. I wanted a way to see the shape of my day: what kinds of calls I took, how they ended, and when the waves hit.
