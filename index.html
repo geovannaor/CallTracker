@@ -92,11 +92,21 @@
   .tile.outcome { border-left: 7px solid var(--c); }
   .tile:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 
+  /* Customer type (optional) */
+  .cust { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; }
+  .cust button {
+    background: #fff; color: var(--navy); border: 1.5px solid var(--tile-border);
+    border-radius: 999px; padding: 9px 16px; min-height: 44px; font-weight: 600; font-size: .92rem;
+  }
+  .cust button.selected { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .optional { font-weight: 500; color: var(--muted); }
+
   /* Outcome color coding */
   .o-resolved      { --c: var(--blue); }
   .o-service_visit { --c: var(--navy); }
   .o-transfer      { --c: var(--transfer); }
   .o-escalation    { --c: var(--orange); }
+  .o-dropped       { --c: var(--black); }
 
   /* ===== Call type guide ===== */
   .guide { margin: 0 4px 12px; }
@@ -121,6 +131,7 @@
 
   .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); display: inline-block; flex: none; }
   .dot.o-transfer { background: var(--gray); border: 2px solid var(--navy); }
+  .dot.o-dropped { background: #fff; border: 2px solid var(--black); }
 
   /* ===== Shift pace ===== */
   .pace-row { margin-top: 12px; }
@@ -265,7 +276,16 @@ const OUTCOMES = [
   { id: "resolved",      label: "Resolved" },
   { id: "service_visit", label: "Service Visit" },
   { id: "transfer",      label: "Transfer" },
-  { id: "escalation",    label: "Escalation" }
+  { id: "escalation",    label: "Escalation" },
+  { id: "dropped",       label: "Dropped" }
+];
+
+// Optional field on each call. Same labels company-wide, so no definitions needed.
+const CUSTOMERS = [
+  { id: "bulk",        label: "Bulk" },
+  { id: "var",         label: "VAR/Enterprise" },
+  { id: "commercial",  label: "Commercial" },
+  { id: "residential", label: "Residential" }
 ];
 
 /* =====================================================
@@ -347,6 +367,7 @@ function tally(calls, field) {
 
 const typeLabel = id => (CALL_TYPES.find(t => t.id === id) || { label: id }).label;
 const outcomeLabel = id => (OUTCOMES.find(o => o.id === id) || { label: id }).label;
+const customerLabel = id => (CUSTOMERS.find(c => c.id === id) || { label: id }).label;
 const fmtTime = iso => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 function fmtDate(key) {
@@ -512,6 +533,7 @@ function mixBar(byOutcome, total) {
    ===================================================== */
 let view = "today";         // "today" | "history" | "day" | "settings"
 let selectedType = null;    // call type picked in step 1
+let selectedCustomer = null; // optional customer type
 let detailKey = null;       // day shown in Day detail
 let settingsDraft = null;   // unsaved edits on the Settings screen
 let guideOpen = false;      // keeps the guide open across re-renders
@@ -539,6 +561,13 @@ function renderToday() {
           <span class="label">${t.icon} ${t.label}</span>
           <span class="count">${plural(byType[t.id] || 0, "call")}</span>
         </button>`).join("")}
+    </div>
+
+    <h3 class="section-title">Customer type <span class="optional">(optional)</span></h3>
+    <p class="section-sub">Skip it and the call still saves. It clears after each call.</p>
+    <div class="cust">
+      ${CUSTOMERS.map(c => `
+        <button class="${c.id === selectedCustomer ? "selected" : ""}" data-action="customer" data-id="${c.id}" aria-pressed="${c.id === selectedCustomer}">${c.label}</button>`).join("")}
     </div>
 
     <h3 class="section-title">2. How did it end?</h3>
@@ -599,6 +628,7 @@ function renderDay(key) {
   const calls = callsFor(key);
   const byOutcome = tally(calls, "outcome");
   const byType = tally(calls, "type");
+  const byCustomer = tally(calls.map(c => ({ customer: c.customer || "none" })), "customer");
 
   return `
     <button class="pill" data-action="back">Back to history</button>
@@ -617,6 +647,13 @@ function renderDay(key) {
       ${typeRows(byType)}
     </section>
 
+    <section class="card">
+      <div class="card-head"><h2>Customer types</h2><span>Optional field</span></div>
+      ${CUSTOMERS.map(c => `
+        <div class="row"><span class="name">${c.label}</span><b>${byCustomer[c.id] || 0}</b></div>`).join("")}
+      <div class="row"><span class="name">Not recorded</span><b>${byCustomer.none || 0}</b></div>
+    </section>
+
     ${paceCard(calls, false, scheduleFor(key))}
 
     <section class="card">
@@ -625,7 +662,7 @@ function renderDay(key) {
         ? calls.map(c => `
           <div class="log-row">
             <time>${fmtTime(c.ts)}</time>
-            <span><strong>${typeLabel(c.type)}</strong>, ended in ${outcomeLabel(c.outcome)}</span>
+            <span><strong>${typeLabel(c.type)}</strong>, ended in ${outcomeLabel(c.outcome)}${c.customer ? " · " + customerLabel(c.customer) : ""}</span>
           </div>`).join("")
         : '<p class="section-sub">No calls on this day.</p>'}
     </section>`;
@@ -744,6 +781,10 @@ document.addEventListener("click", e => {
       selectedType = selectedType === id ? null : id;
       break;
 
+    case "customer":
+      selectedCustomer = selectedCustomer === id ? null : id;
+      break;
+
     case "outcome": {
       if (!selectedType) return;
       const t = todayKey();
@@ -752,9 +793,11 @@ document.addEventListener("click", e => {
         id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         ts: new Date().toISOString(),
         type: selectedType,
-        outcome: id
+        outcome: id,
+        ...(selectedCustomer ? { customer: selectedCustomer } : {})
       });
       selectedType = null;
+      selectedCustomer = null;
       save();
       break;
     }
@@ -775,6 +818,7 @@ document.addEventListener("click", e => {
         store.calls = store.calls.filter(c => dayKey(new Date(c.ts)) !== t);
         delete store.days[t];
         selectedType = null;
+        selectedCustomer = null;
         save();
       }
       break;
