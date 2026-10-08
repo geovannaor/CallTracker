@@ -177,6 +177,16 @@
   .empty { text-align: center; color: var(--muted); padding: 48px 20px; line-height: 1.5; }
   .empty strong { display: block; color: var(--navy); font-size: 1.05rem; margin-bottom: 6px; }
 
+  /* ===== Calls to date ===== */
+  .stats .counters { margin-bottom: 8px; }
+  .bars { display: flex; gap: 6px; margin-top: 16px; }
+  .bar-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .bar-n { font-size: .72rem; font-weight: 600; color: var(--muted); }
+  .bar-track { height: 90px; width: 100%; display: flex; align-items: flex-end; }
+  .bar { width: 100%; min-height: 3px; background: var(--blue); border-radius: 6px 6px 0 0; }
+  .bar.live { background: #fff; border: 2px dashed var(--blue); border-bottom: none; }
+  .bar-d { font-size: .72rem; color: var(--muted); }
+
   /* ===== Day detail ===== */
   .detail-date { font-size: 1.35rem; font-weight: 800; color: var(--navy); margin: 16px 4px 2px; }
   .log-row { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .93rem; }
@@ -368,6 +378,11 @@ function tally(calls, field) {
 const typeLabel = id => (CALL_TYPES.find(t => t.id === id) || { label: id }).label;
 const outcomeLabel = id => (OUTCOMES.find(o => o.id === id) || { label: id }).label;
 const customerLabel = id => (CUSTOMERS.find(c => c.id === id) || { label: id }).label;
+
+function fmtShortDate(key) {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
 const fmtTime = iso => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 function fmtDate(key) {
@@ -596,6 +611,62 @@ function renderToday() {
       : "No calls logged yet today."}</p>`;
 }
 
+// "Calls to date": every number is calculated from the saved call records
+function statsCard() {
+  const counts = {};
+  store.calls.forEach(c => {
+    const k = dayKey(new Date(c.ts));
+    counts[k] = (counts[k] || 0) + 1;
+  });
+  const keys = Object.keys(counts).sort();
+  if (!keys.length) return "";
+
+  // Today stays out of the averages until its saved shift end time passes
+  const today = todayKey();
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const inProgress = k => k === today && nowMin < toMin(scheduleFor(k).end);
+
+  const done = keys.filter(k => !inProgress(k));
+  const live = keys.some(inProgress);
+  const total = store.calls.length;
+  const avg = list => list.reduce((s, k) => s + counts[k], 0) / list.length;
+  const last = done.slice(-7);
+
+  let busiest = null, lightest = null;
+  done.forEach(k => {
+    if (!busiest || counts[k] >= counts[busiest]) busiest = k;
+    if (!lightest || counts[k] <= counts[lightest]) lightest = k;
+  });
+
+  const shown = keys.slice(-14);
+  const max = Math.max(1, ...shown.map(k => counts[k]));
+
+  return `
+    <section class="card stats">
+      <div class="card-head"><h2>Calls to date</h2><span>All time</span></div>
+      <div class="counters">
+        <div class="counter"><b>${total}</b><small>Total calls</small></div>
+        <div class="counter"><b>${done.length}</b><small>Shifts done</small></div>
+        <div class="counter"><b>${done.length ? avg(done).toFixed(1) : "–"}</b><small>Avg per shift</small></div>
+      </div>
+      ${done.length ? `
+        <div class="row"><span class="name">Last ${plural(last.length, "shift")} average</span><b>${avg(last).toFixed(1)}</b></div>` : ""}
+      ${done.length > 1 ? `
+        <div class="row"><span class="name">Busiest shift</span><b>${fmtShortDate(busiest)} · ${counts[busiest]}</b></div>
+        <div class="row"><span class="name">Lightest shift</span><b>${fmtShortDate(lightest)} · ${counts[lightest]}</b></div>` : ""}
+      <div class="bars" role="img" aria-label="Calls per day">
+        ${shown.map(k => `
+          <div class="bar-col">
+            <span class="bar-n">${counts[k]}</span>
+            <div class="bar-track"><div class="bar${inProgress(k) ? " live" : ""}" style="height:${(counts[k] / max) * 100}%"></div></div>
+            <span class="bar-d">${Number(k.slice(8))}</span>
+          </div>`).join("")}
+      </div>
+      <p class="status">Calls per day, last ${plural(shown.length, "day")} logged.${live ? " Today's dashed bar is still in progress and stays out of the averages until your shift ends." : ""}</p>
+    </section>`;
+}
+
 function renderHistory() {
   const keys = [...new Set(store.calls.map(c => dayKey(new Date(c.ts))))].sort().reverse();
   if (!keys.length) {
@@ -604,6 +675,8 @@ function renderHistory() {
   const today = todayKey();
 
   return `
+    ${statsCard()}
+
     <h3 class="section-title">Your shifts</h3>
     <p class="section-sub">Tap a day to see its full breakdown.</p>
     ${keys.map(k => {
