@@ -178,7 +178,12 @@
   .empty strong { display: block; color: var(--navy); font-size: 1.05rem; margin-bottom: 6px; }
 
   /* ===== Calls to date ===== */
-  .stats .counters { margin-bottom: 8px; }
+  .stat-tiles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+  .stat-tiles .counter { aspect-ratio: auto; padding: 14px 8px; }
+  .avg-table { width: 100%; border-collapse: collapse; font-size: .92rem; margin-bottom: 4px; }
+  .avg-table th { font-size: .78rem; font-weight: 500; color: var(--muted); text-align: right; padding: 4px 0 6px; }
+  .avg-table td { padding: 10px 0; border-top: 1px solid var(--line); text-align: right; font-weight: 800; color: var(--navy); }
+  .avg-table td:first-child { text-align: left; font-weight: 500; color: var(--black); }
   .bars { display: flex; gap: 6px; margin-top: 16px; }
   .bar-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .bar-n { font-size: .72rem; font-weight: 600; color: var(--muted); }
@@ -295,6 +300,7 @@ const CUSTOMERS = [
   { id: "bulk",        label: "Bulk" },
   { id: "var",         label: "VAR/Enterprise" },
   { id: "commercial",  label: "Commercial" },
+  { id: "municipal",   label: "Municipal" },
   { id: "residential", label: "Residential" }
 ];
 
@@ -613,10 +619,11 @@ function renderToday() {
 
 // "Calls to date": every number is calculated from the saved call records
 function statsCard() {
-  const counts = {};
+  const counts = {}, transfers = {};
   store.calls.forEach(c => {
     const k = dayKey(new Date(c.ts));
     counts[k] = (counts[k] || 0) + 1;
+    if (c.outcome === "transfer") transfers[k] = (transfers[k] || 0) + 1;
   });
   const keys = Object.keys(counts).sort();
   if (!keys.length) return "";
@@ -632,6 +639,10 @@ function statsCard() {
   const total = store.calls.length;
   const avg = list => list.reduce((s, k) => s + counts[k], 0) / list.length;
   const last = done.slice(-7);
+  const net = k => counts[k] - (transfers[k] || 0);
+  const avgNet = list => list.reduce((s, k) => s + net(k), 0) / list.length;
+  const totalTransfers = store.calls.filter(c => c.outcome === "transfer").length;
+  const pct = total ? Math.round((totalTransfers / total) * 100) : 0;
 
   let busiest = null, lightest = null;
   done.forEach(k => {
@@ -645,13 +656,18 @@ function statsCard() {
   return `
     <section class="card stats">
       <div class="card-head"><h2>Calls to date</h2><span>All time</span></div>
-      <div class="counters">
+      <div class="stat-tiles">
         <div class="counter"><b>${total}</b><small>Total calls</small></div>
+        <div class="counter"><b>${totalTransfers}</b><small>Transfers${total ? ` · ${pct}%` : ""}</small></div>
         <div class="counter"><b>${done.length}</b><small>Shifts done</small></div>
         <div class="counter"><b>${done.length ? avg(done).toFixed(1) : "–"}</b><small>Avg per shift</small></div>
       </div>
       ${done.length ? `
-        <div class="row"><span class="name">Last ${plural(last.length, "shift")} average</span><b>${avg(last).toFixed(1)}</b></div>` : ""}
+        <table class="avg-table">
+          <tr><th></th><th>All calls</th><th>Without transfers</th></tr>
+          <tr><td>All-time average</td><td>${avg(done).toFixed(1)}</td><td>${avgNet(done).toFixed(1)}</td></tr>
+          <tr><td>Last ${plural(last.length, "shift")}</td><td>${avg(last).toFixed(1)}</td><td>${avgNet(last).toFixed(1)}</td></tr>
+        </table>` : ""}
       ${done.length > 1 ? `
         <div class="row"><span class="name">Busiest shift</span><b>${fmtShortDate(busiest)} · ${counts[busiest]}</b></div>
         <div class="row"><span class="name">Lightest shift</span><b>${fmtShortDate(lightest)} · ${counts[lightest]}</b></div>` : ""}
